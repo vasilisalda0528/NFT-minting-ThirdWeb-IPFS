@@ -1,23 +1,25 @@
 
-import { createNft, mplTokenMetadata } from '@metaplex-foundation/mpl-token-metadata'
+import { Key, TokenStandard, collectionDetails, createNft, mplTokenMetadata } from '@metaplex-foundation/mpl-token-metadata'
 import { createUmi } from '@metaplex-foundation/umi-bundle-defaults'
-import { createGenericFile, createSignerFromKeypair, generateSigner, keypairIdentity, percentAmount, sol } from '@metaplex-foundation/umi';
+import { KeypairSigner, createGenericFile, createSignerFromKeypair, generateSigner, keypairIdentity, percentAmount, sol } from '@metaplex-foundation/umi';
 // import { mockStorage } from '@metaplex-foundation/umi-storage-mock';
 import { ThirdwebStorage } from "@thirdweb-dev/storage";
 import { createThirdwebClient } from "thirdweb";
 import { createWallet, injectedProvider } from "thirdweb/wallets";
-
+import { createCandyMachine } from '@metaplex-foundation/mpl-candy-machine';
+import { mintV1, createV1 } from '@metaplex-foundation/mpl-token-metadata';
+import { verifyCollectionV1 } from '@metaplex-foundation/mpl-token-metadata'
 
 
 // const { Connection } = require('@solana/web3.js');
 import * as fs from 'fs';
 import secret from './wallet1.json';
 import bs58 from 'bs58';
+import { PublicKey } from '@solana/web3.js';
 
 const QUICKNODE_RPC = 'https://api.devnet.solana.com'; //Replace with your QuickNode RPC Endpoint
-const umi = createUmi(QUICKNODE_RPC); 
+const umi = createUmi(QUICKNODE_RPC) 
 const log = console.log
-
 //IPFS storage setting - ThirdWeb
 const MyThirdWeb_APIKey = '_S8t6mQtr3btlOx9VXb895pfKuOlumbVwjPvLHULmXEEYRBk7Y_tA41VMhWPeIfD0hP-_DvFuS0R-B9zex5UNQ'
 const storage = new ThirdwebStorage({
@@ -26,28 +28,12 @@ const storage = new ThirdwebStorage({
 
 //Wallet connection 
 const creatorWallet = umi.eddsa.createKeypairFromSecretKey(new Uint8Array(bs58.decode(secret)));
+// const creatorWallet = umi.eddsa.createKeypairFromSecretKey(new Uint8Array(secret));
 const creator = createSignerFromKeypair(umi, creatorWallet);
-const walletConnection = async()=>{
-    const client = createThirdwebClient({
-        clientId: "BSW3hhwCApffCPVRA9ewgmmqdH4EtNWMLXmpSvMso8Sf",
-    });
-    // const client = createThirdwebClient({
-    //     secretKey: "<your_secret_key>",
-    //   });
-    log({client})
-    const phantom = createWallet("app.phantom");
-    if (injectedProvider("app.phantom")) {
-        await phantom.connect({ client });
-    }
-    // log({creator,phantom})
-    // else {
-    //     await phantom.connect({
-    //       client,
-    //       walletConnect: { showQrModal: true },
-    //     });
-    // }
-}
+umi.use(keypairIdentity(creator));
 
+//Candimachine
+// const candyMachine = createCandyMachine()
 
 
 // umi.use(keypairIdentity(creator));
@@ -55,8 +41,8 @@ const walletConnection = async()=>{
 // umi.use(mockStorage());
 
 const nftDetail = {
-    name: "QuickNode Pixel",
-    symbol: "QP",
+    name: "Lucky",
+    symbol: "HP",
     uri: "IPFS_URL_OF_METADATA",
     royalties: 5.5,
     description: 'Pixel infrastructure for everyone!',
@@ -71,7 +57,7 @@ const nftDetail = {
 async function uploadImage(): Promise<string> {
     try {
         const imgDirectory = './uploads/assets';
-        const imgName = 'image1.png'
+        const imgName = 'image3.png'
         const filePath = `${imgDirectory}/${imgName}`;
         log({filePath})
         const fileBuffer = fs.readFileSync(filePath);
@@ -101,13 +87,14 @@ async function uploadMetadata(imageUri: string): Promise<string> {
                     {
                         type: nftDetail.imgType,
                         uri: imageUri,
-                    },
+                    }
                 ]
-            }
+            },
         };
-
         const metad = await storage.upload(metadata);
+        log({metad})
         const metadataUri = await storage.resolveScheme(metad);
+        umi.use(mplTokenMetadata())
         console.log('Uploaded metadata:', metadataUri);
         return metadataUri;
     } catch (e) {
@@ -118,17 +105,18 @@ async function uploadMetadata(imageUri: string): Promise<string> {
 async function mintNft(metadataUri: string) {
     try {
         const mint = generateSigner(umi);
-        const nft = await createNft(umi, {
+        const metadataAccount:any = {
             mint,
             name: nftDetail.name,
             symbol: nftDetail.symbol,
             uri: metadataUri,
             sellerFeeBasisPoints: percentAmount(nftDetail.royalties),
             creators: [{ address: creator.publicKey, verified: true, share: 100 }],
-        })
-        log({nft})
-        await nft.sendAndConfirm(umi)
-        console.log(`Created NFT: ${mint.publicKey.toString()}`)
+            isCollection:true,
+            // authority:generateSigner(umi)
+        }
+         await createNft(umi, metadataAccount).sendAndConfirm(umi)
+        console.log(`Created NFT: ${mint.publicKey}`)
     } catch (e) {
         throw e;
     }
@@ -136,7 +124,7 @@ async function mintNft(metadataUri: string) {
 
 // const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 
-// async function submitTransactionWithBlockhash(transaction) {
+// async function submitTransactionWithBlockhash(transaction:any) {
 //   const blockhash = await connection.getRecentBlockhash();
 //   transaction.recentBlockhash = blockhash.blockhash;
 
@@ -148,12 +136,10 @@ async function mintNft(metadataUri: string) {
 
 async function main() {
     log('starting.....')
-    // await walletConnection();
-    // const imageUri = await uploadImage();
     const imageUri = await uploadImage();
     const metadataUri = await uploadMetadata(imageUri);
-    log({metadataUri})
-    await mintNft(metadataUri);
+    await mintNft(metadataUri)
+    // if(collection!=undefined)await mintNft(metadataUri,false,collection);
 }
 
 main();
